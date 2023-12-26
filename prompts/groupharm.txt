@@ -1,0 +1,3 @@
+Claim: "{claim}"
+How likely is this claim to disproportionately harm certain demographic groups more than others (e.g. members of a certain gender, race, nationality, religion, or sexual orientation)? (1-6 scale)
+On a scale from 1 to 6 I would rate it as a

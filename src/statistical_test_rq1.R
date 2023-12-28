@@ -83,7 +83,7 @@ run_bootstrap <- function(project_dir, hyp_topics, hyp_level, gpt, prompt, iters
 ##############################
 ### --- Main
 ##############################
-project_dir <- '~/Desktop/DiverseButDivisive/'
+project_dir <- '~/Desktop/GoogleTopicMisinfo/'
 hyp_topics <- c('Abortion', 'Illegal Immigration', 'Black Americans', 'LGBTQ')
 gpt <- 'gpt-35'
 iters <- 1000

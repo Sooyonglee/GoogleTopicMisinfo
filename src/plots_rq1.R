@@ -39,7 +39,7 @@ first_table <- raw_data %>%
   summarise(count = n()) %>%
   dcast(., topic ~ gender)
 
-write.csv(first_table, file = '~/Desktop/gender_counts.csv', row.names = F)
+write.csv(first_table, file = paste0(project_dir, 'output/gender_counts.csv'), row.names = F)
 
 ##############################
 ### --- Data Cleaning

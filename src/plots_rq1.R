@@ -14,7 +14,8 @@ gpt_conditional_prompt1 <- fread(paste0(project_dir, 'data/', gpt, '/groupharm-c
   select(claim, gender, true_label, predict_label_conditional1) %>%
   group_by(claim, gender) %>%
   summarise(mean_conditional_label1 = mean(predict_label_conditional1),
-            mean_true_label = mean(true_label)) %>%
+            mean_true_label = mean(true_label),
+            count = n()) %>%
   ungroup()
 
 prompt <- 'prompt2'
@@ -36,8 +37,8 @@ raw_data <- fread(paste0(project_dir, 'data/GroundTruthPreExperiment.csv')) %>%
 first_table <- raw_data %>%
   left_join(gpt_conditional_prompt1, by = c('source'='claim')) %>%
   group_by(gender, topic) %>%
-  summarise(count = n()) %>%
-  dcast(., topic ~ gender)
+  summarise(count = sum(count)) %>%
+  reshape2::dcast(., topic ~ gender)
 
 write.csv(first_table, file = paste0(project_dir, 'output/gender_counts.csv'), row.names = F)
 
@@ -86,7 +87,8 @@ g1 <- ggplot(plot_data, aes(x = data_type, y = value, fill = gender)) +
   facet_wrap(~topic) +
   coord_flip() +
   ylab('Mean Rating for Perceived Group Harm\n(1-6 scale)') +
-  xlab('')
+  xlab('') +
+  theme(text = element_text(size = 14))
 
 ggsave(g1, filename = paste0(project_dir, 'output/means_plot_1a.png'), width = 8, height = 6)
 
@@ -109,7 +111,8 @@ g2 <- ggplot(plot_data, aes(x = data_type, y = value, fill = gender)) +
   facet_wrap(~topic) +
   coord_flip() +
   ylab('Mean Rating for Perceived Group Harm\n(1-6 scale)') +
-  xlab('')
+  xlab('') +
+  theme(text = element_text(size = 14))
 
 ggsave(g2, filename = paste0(project_dir, 'output/means_plot_1b.png'), width = 12, height = 6)
 

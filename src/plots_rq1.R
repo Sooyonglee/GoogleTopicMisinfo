@@ -61,7 +61,8 @@ gpt_rq1 <- gpt_conditional_prompt1 %>% # join data sources
               names_from = gender, 
               values_from = c(mean_true_label, 
                               mean_conditional_label1,
-                              mean_conditional_label2)) 
+                              mean_conditional_label2)) %>%
+  mutate(gender_difference_true = mean_true_label_Female - mean_true_label_Male)
 
 
 #######################

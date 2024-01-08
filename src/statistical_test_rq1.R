@@ -5,10 +5,12 @@ library(tidyr)
 
 
 ##############################
-### --- Bootstrap Function
+### --- Bootstrap Function - claim-level resampling with replacement
 ##############################
 
 bootstrap_function <- function(gpt_datatable, raw_datatable, hyp_level, iters) {
+  
+  
   gpt_joined <- gpt_datatable[raw_datatable, on = .(claim = source)]
   # Bootstrapping parameters
   nrow_boot <- nrow(gpt_joined)
@@ -16,17 +18,27 @@ bootstrap_function <- function(gpt_datatable, raw_datatable, hyp_level, iters) {
   bootstrap_results_list <- vector("list", iters)
   # Bootstrapping loop
   for (i in 1:iters) {
-    # Efficient sampling
-    gpt_joined_boot <- gpt_joined[sample(.N, nrow_boot, replace = TRUE)]
+    
+    # create data.table of resampled claims
+    resampled_claims <- raw_datatable[, .(source)][, .(claim = sample(source, .N, replace = TRUE))]
+    
+    # join annotation data to resampled claims
+    resampled_dt <- gpt_joined[resampled_claims, on = 'claim', allow.cartesian = TRUE]
     
     # reshape data to calculate gender-level differences
-    gpt_groupharm_topic <- gpt_joined_boot[, .(mean_true = mean(true_label),
-                                               mean_gpt = mean(predict_label_conditional)), by = .(topic, gender)] %>%
+    gpt_groupharm_topic <- resampled_dt[, .(mean_true = mean(true_label),
+                                               mean_gpt = mean(predict_label_conditional)), by = .(claim,topic, gender)] %>%
       pivot_wider(., 
-                  id_cols = topic, 
+                  id_cols = c(topic, claim), 
                   names_from = gender, 
                   values_from = c(mean_true, mean_gpt)) %>%
-      mutate(test_statistic = (mean_gpt_Female - mean_gpt_Male) - (mean_true_Female - mean_true_Male)) %>%
+      mutate(test_statistic = abs(mean_gpt_Female - mean_gpt_Male) - abs(mean_true_Female - mean_true_Male)) %>%
+      group_by(topic) %>%
+      summarise(mean_true_Female = mean(mean_true_Female),
+                mean_true_Male = mean(mean_true_Male),
+                mean_gpt_Female = mean(mean_gpt_Female),
+                mean_gpt_Male = mean(mean_gpt_Male),
+                test_statistic = mean(test_statistic)) %>%
       setDT()
     
     gpt_groupharm_topic[, iter := i]
@@ -86,7 +98,7 @@ run_bootstrap <- function(project_dir, hyp_topics, hyp_level, gpt, prompt, iters
 project_dir <- '~/Desktop/GoogleTopicMisinfo/'
 hyp_topics <- c('Abortion', 'Illegal Immigration', 'Black Americans', 'LGBTQ')
 gpt <- 'gpt-35'
-iters <- 1000
+iters <- 10000
 hyp_level <- 0
 
 

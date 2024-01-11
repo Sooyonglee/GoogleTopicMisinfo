@@ -11,26 +11,32 @@ import os
 import random
 import numpy as np
 
+def var0(x):
+    return np.var(x, ddof=0)
+
 def calculate_test_statistic(row):
-    abs_llm_diff = abs(row['predict_label']['Female'] - row['predict_label']['Male'])
-    abs_human_diff = abs(row['true_label']['Female'] - row['true_label']['Male'])
+    abs_llm_diff = abs(row['predict_label_female'] - row['predict_label_male'])/np.sqrt(1 + row['var_predict'])
+    abs_human_diff = abs(row['true_label_female'] - row['true_label_male'])/np.sqrt(1 + row['var_true'])
     return abs_llm_diff - abs_human_diff
 
 # Returns the empirical test statistic for each topic
 def shape_topic_level_test_statistic(merged):
     # Pivot the original data to get true_label and predict_label for each gender for each claim
-    pivot_data = merged_data.pivot_table(index=['topic', 'claim'], columns='gender', values=['true_label', 'predict_label']).reset_index()
+    pivot_data = merged.pivot_table(index=['topic', 'claim'], columns='gender', values=['true_label', 'predict_label']).reset_index().droplevel(1, axis=1)
+    pivot_data.columns = ['topic', 'claim', 'predict_label_female', 'predict_label_male', 'true_label_female', 'true_label_male']
 
+    # Calculate topic-level variance of human and LLM
+    pivot_data_var = merged.pivot_table(index=['topic', 'claim'], values=['true_label', 'predict_label'], aggfunc=var0).reset_index()
+    pivot_data_var.columns = ['topic', 'claim', 'var_predict', 'var_true']
+    # Merge data
+    pivot_data_merged = pd.merge(pivot_data, pivot_data_var, on=['topic', 'claim'])
     # Apply the function to each row
-    pivot_data['test_statistic'] = pivot_data.apply(calculate_test_statistic, axis=1)
-
+    pivot_data_merged['test_statistic'] = pivot_data_merged.apply(calculate_test_statistic, axis=1)
     # Group by topic and calculate the mean test statistic
-    topic_level_statistic = pivot_data.groupby('topic')['test_statistic'].mean().reset_index()
+    topic_level_statistic = pivot_data_merged.groupby('topic')['test_statistic'].mean().reset_index()
     return topic_level_statistic
 
 # Creating the desired dictionary
-# Structure: {topic: {claim: {'human male': [], 'human female': [], 'LLM male': [], 'LLM female': []}}}
-
 def create_dictionary(merged_data):
     topic_dict = {}
     for index, row in merged_data.iterrows():
@@ -75,26 +81,49 @@ def run_bootstrap(B, topic_dict):
                 ## This should make a more conservative test than joining all data
                 combined_male = topic_dict[topic][claim]['human_male'] + topic_dict[topic][claim]['LLM_male'] 
                 combined_female = topic_dict[topic][claim]['human_female'] + topic_dict[topic][claim]['LLM_female']
-                resampled_n1 = np.mean(random.choices(combined_male, k=n1))
-                resampled_n2 = np.mean(random.choices(combined_female, k=n2))
-                resampled_n3 = np.mean(random.choices(combined_male, k=n3))
-                resampled_n4 = np.mean(random.choices(combined_female, k=n4))
-                bootstrap_test_stat = np.abs(resampled_n4 - resampled_n3) - np.abs(resampled_n2 - resampled_n1)
+                bootstrap_n1 = random.choices(combined_male, k=n1)
+                bootstrap_n2 = random.choices(combined_female, k=n2)
+                bootstrap_n3 = random.choices(combined_male, k=n3)
+                bootstrap_n4 = random.choices(combined_female, k=n4)
+                mean_n1 = np.mean(bootstrap_n1)
+                mean_n2 = np.mean(bootstrap_n2)
+                mean_n3 = np.mean(bootstrap_n3)
+                mean_n4 = np.mean(bootstrap_n4)
+                var_human = var0(bootstrap_n3 + bootstrap_n4)
+                var_llm = var0(bootstrap_n1 + bootstrap_n2)
+                bootstrap_test_stat = (np.abs(mean_n4 - mean_n3)/np.sqrt(1 + var_llm)) \
+                    - (np.abs(mean_n2 - mean_n1)/np.sqrt(1 + var_human))
                 results.append([topic, claim, bootstrap_test_stat, b])
                 
     return results
+
+# clean format for presentation
+def clean_results(bootstrap_results, topic_level_statistic):
+    raw_results = pd.DataFrame(bootstrap_results, columns=['topic', 'claim', 'bootstrap_test_stat', 'rep'])
+    # aggregate bootstrap results to topic, bootstrap rep level
+    rep_level = raw_results.groupby(['topic', 'rep'])['bootstrap_test_stat'].mean().reset_index()
+    # merge data with observed test statistics by topic
+    results = pd.merge(rep_level, topic_level_statistic, on='topic')
+    # Calculate score - 1 if observed is greater than bootstrap result, 0 otherwise
+    results['score'] = np.where(results['test_statistic']>results['bootstrap_test_stat'], 1, 0)
+    # Calculate proportion of reps where observed is greater than the bootstrap average
+    topic_results = (1 - results.groupby(['topic'])['score'].mean()).reset_index()
+    topic_results = pd.merge(topic_results, topic_level_statistic, on='topic')
+    return topic_results
 
 
 ###########
 #### MAIN
 ###########
-B = 20000
-
 # Change working directory
-os.chdir('/Users/tdn897/Desktop/GoogleTopicMisinfo/')
+cur_dir = '/Users/tdn897/Desktop/GoogleTopicMisinfo/'
+B = 10000
+
+prompt = 'prompt1'
 # Load the datasets
-groupharm_data = pd.read_csv('data/gpt-35/groupharm-conditional-results-prompt2.csv')
-ground_truth_data = pd.read_csv('data/GroundTruthPreExperiment.csv')
+groupharm_data = pd.read_csv(cur_dir + 'data/gpt-35/groupharm-conditional-results-' + prompt + '.csv')
+ground_truth_data = pd.read_csv(cur_dir + 'data/GroundTruthPreExperiment.csv')
+ground_truth_data['topic'] = np.where(ground_truth_data.topic.str.contains('Gold'), 'Gold', ground_truth_data['topic'])
 # Merging the datasets on the 'claim' column
 merged_data = pd.merge(groupharm_data, ground_truth_data, left_on='claim', right_on='source', how='inner')
 # Create observed test statistic for each claim
@@ -102,14 +131,23 @@ topic_level_statistic = shape_topic_level_test_statistic(merged = merged_data)
 # create topic_dict
 topic_dict = create_dictionary(merged_data = merged_data)
 # Run Bootstrapping procedure
-results = run_bootstrap(B = B, topic_dict = topic_dict)
+bootstrap_results = run_bootstrap(B = B, topic_dict = topic_dict)
 # Bootstrap results at topic, claim, bootstrap rep level
-raw_results = pd.DataFrame(results, columns=['topic', 'claim', 'bootstrap_test_stat', 'rep'])
-# aggregate bootstrap results to topic, bootstrap rep level
-rep_level = raw_results.groupby(['topic', 'rep'])['bootstrap_test_stat'].mean().reset_index()
-# merge data with observed test statistics by topic
-results = pd.merge(rep_level, topic_level_statistic, on='topic')
-# Calculate score - 1 if observed is greater than bootstrap result, 0 otherwise
-results['score'] = np.where(results['test_statistic']>results['bootstrap_test_stat'], 1, 0)
-# Calculate proportion of reps where observed is greater than the bootstrap average
-topic_results = results.groupby(['topic'])['score'].mean()
+final_results = clean_results(bootstrap_results=bootstrap_results, topic_level_statistic=topic_level_statistic)
+final_results.to_csv(cur_dir + 'output/stats_' + prompt + '_rq1.csv', index=False)
+
+prompt = 'prompt2'
+groupharm_data = pd.read_csv(cur_dir + 'data/gpt-35/groupharm-conditional-results-' + prompt + '.csv')
+ground_truth_data = pd.read_csv(cur_dir + 'data/GroundTruthPreExperiment.csv')
+ground_truth_data['topic'] = np.where(ground_truth_data.topic.str.contains('Gold'), 'Gold', ground_truth_data['topic'])
+# Merging the datasets on the 'claim' column
+merged_data = pd.merge(groupharm_data, ground_truth_data, left_on='claim', right_on='source', how='inner')
+# Create observed test statistic for each claim
+topic_level_statistic = shape_topic_level_test_statistic(merged = merged_data)
+# create topic_dict
+topic_dict = create_dictionary(merged_data = merged_data)
+# Run Bootstrapping procedure
+bootstrap_results = run_bootstrap(B = B, topic_dict = topic_dict)
+# Bootstrap results at topic, claim, bootstrap rep level
+final_results = clean_results(bootstrap_results=bootstrap_results, topic_level_statistic=topic_level_statistic)
+final_results.to_csv(cur_dir + 'output/stats_' + prompt + '_rq1.csv', index=False)

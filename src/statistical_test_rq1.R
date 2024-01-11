@@ -27,7 +27,7 @@ bootstrap_function <- function(gpt_datatable, raw_datatable, hyp_level, iters) {
     
     # reshape data to calculate gender-level differences
     gpt_groupharm_topic <- resampled_dt[, .(mean_true = mean(true_label),
-                                               mean_gpt = mean(predict_label_conditional)), by = .(claim,topic, gender)] %>%
+                                            mean_gpt = mean(predict_label_conditional)), by = .(claim,topic, gender)] %>%
       pivot_wider(., 
                   id_cols = c(topic, claim), 
                   names_from = gender, 
@@ -103,7 +103,7 @@ hyp_level <- 0
 
 
 # - run for prompt 1
- 
+
 prompt <- 'prompt1'
 
 bootstrap_data <- run_bootstrap(project_dir = project_dir,

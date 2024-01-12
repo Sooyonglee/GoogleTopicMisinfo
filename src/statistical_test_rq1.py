@@ -71,6 +71,7 @@ def run_bootstrap(B, topic_dict):
         print('Topic: ' + topic + '\n\n\n')
         for claim in topic_dict[topic]:
             # Bootstrap resampling from joint distribution by gender.
+            # Null hypothesis indicates there should be no differences by LLM vs human, but differences by gender are ok.
             for b in range(0, B):
                 n1 = len(topic_dict[topic][claim]['human_male'])
                 n2 = len(topic_dict[topic][claim]['human_female'])
@@ -91,8 +92,9 @@ def run_bootstrap(B, topic_dict):
                 mean_n4 = np.mean(bootstrap_n4)
                 var_human = var0(bootstrap_n3 + bootstrap_n4)
                 var_llm = var0(bootstrap_n1 + bootstrap_n2)
-                bootstrap_test_stat = (np.abs(mean_n4 - mean_n3)/np.sqrt(1 + var_llm)) \
-                    - (np.abs(mean_n2 - mean_n1)/np.sqrt(1 + var_human))
+                abs_llm_diff = (np.abs(mean_n4 - mean_n3)/np.sqrt(1 + var_llm))
+                abs_human_diff = (np.abs(mean_n2 - mean_n1)/np.sqrt(1 + var_human))
+                bootstrap_test_stat = abs_llm_diff - abs_human_diff
                 results.append([topic, claim, bootstrap_test_stat, b])
                 
     return results
